@@ -1,7 +1,27 @@
 import os
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
+
+
+def sort_files(files: List[Path], sort_method: str = 'name', sort_order: str = 'ascending') -> List[Path]:
+    """
+    Sort a list of Path objects by name or modification date.
+
+    Args:
+        files: List of Path objects to sort
+        sort_method: 'name' for alphabetical, 'date' for modification date (default: 'name')
+        sort_order: 'ascending' or 'descending' (default: 'ascending')
+
+    Returns:
+        Sorted list of Path objects
+    """
+    reverse = sort_order.lower() == 'descending'
+
+    if sort_method.lower() == 'date':
+        return sorted(files, key=lambda f: f.stat().st_mtime, reverse=reverse)
+    else:
+        return sorted(files, key=lambda f: f.name, reverse=reverse)
 
 
 def parse_vab_file(file_path: str) -> Dict[str, Any]:
@@ -54,7 +74,7 @@ def parse_seq_file(file_path: str, vab_index: int) -> Dict[str, Any]:
         return None
 
 
-def process_vab_directory(directory: str, output_json: str = 'vab_data.json') -> None:
+def process_vab_directory(directory: str, output_json: str = 'vab_data.json', sort_method: str = 'name', sort_order: str = 'ascending') -> None:
     """
     Process all .vab files in a directory that have corresponding .seq files.
     Both files are added to the JSON with derived filetypes.
@@ -62,12 +82,16 @@ def process_vab_directory(directory: str, output_json: str = 'vab_data.json') ->
     Args:
         directory: Path to directory containing .vab files
         output_json: Path to output JSON file
+        sort_method: 'name' for alphabetical, 'date' for modification date (default: 'name')
+        sort_order: 'ascending' or 'descending' (default: 'ascending')
     """
     vab_files = list(Path(directory).glob('*.vab'))
 
     if not vab_files:
         print(f"No .vab files found in {directory}")
         return
+
+    vab_files = sort_files(vab_files, sort_method, sort_order)
 
     data = []
     vab_pair_index = 0
@@ -99,7 +123,7 @@ def process_vab_directory(directory: str, output_json: str = 'vab_data.json') ->
     print(f"Output saved to: {output_json}")
 
 
-def process_with_specific_vab(directory: str, vab_file_path: str, output_json: str = 'vab_data.json') -> None:
+def process_with_specific_vab(directory: str, vab_file_path: str, output_json: str = 'vab_data.json', sort_method: str = 'name', sort_order: str = 'ascending') -> None:
     """
     Process a specific .vab file and all .seq files in the directory that depend on it.
 
@@ -107,6 +131,8 @@ def process_with_specific_vab(directory: str, vab_file_path: str, output_json: s
         directory: Path to directory containing .seq files
         vab_file_path: Path to the specific .vab file to use
         output_json: Path to output JSON file
+        sort_method: 'name' for alphabetical, 'date' for modification date (default: 'name')
+        sort_order: 'ascending' or 'descending' (default: 'ascending')
     """
     vab_path = Path(vab_file_path)
 
@@ -119,6 +145,8 @@ def process_with_specific_vab(directory: str, vab_file_path: str, output_json: s
     if not seq_files:
         print(f"No .seq files found in {directory}")
         return
+
+    seq_files = sort_files(seq_files, sort_method, sort_order)
 
     data = []
 
@@ -148,9 +176,10 @@ def main() -> None:
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: python vabseq.py <directory> [output_json] [specific_vab_file]")
+        print("Usage: python vabseq.py <directory> [output_json] [specific_vab_file] [--sort-method name|date] [--sort-order ascending|descending]")
         print("Example: python vabseq.py ./vab_files output.json")
         print("Example: python vabseq.py ./vab_files output.json ./vab_files/game.vab")
+        print("Example: python vabseq.py ./vab_files output.json --sort-method date --sort-order descending")
         sys.exit(1)
 
     directory = sys.argv[1]
@@ -159,14 +188,35 @@ def main() -> None:
         print(f"Error: Directory '{directory}' not found")
         sys.exit(1)
 
-    # Check if a specific VAB file is provided as third argument
-    if len(sys.argv) > 3:
-        specific_vab = sys.argv[3]
-        output_json = sys.argv[2] if len(sys.argv) > 2 else 'vab_data.json'
-        process_with_specific_vab(directory, specific_vab, output_json)
+    # Parse sort options from flags
+    sort_method = 'name'
+    sort_order = 'ascending'
+    positional_args = []
+
+    for i, arg in enumerate(sys.argv[2:], start=2):
+        if arg == '--sort-method' and i + 1 < len(sys.argv):
+            sort_method = sys.argv[i + 1]
+        elif arg == '--sort-order' and i + 1 < len(sys.argv):
+            sort_order = sys.argv[i + 1]
+        elif not arg.startswith('--'):
+            positional_args.append(arg)
+
+    # Validate sort options
+    if sort_method not in ('name', 'date'):
+        print(f"Error: Invalid sort method '{sort_method}'. Use 'name' or 'date'")
+        sys.exit(1)
+    if sort_order not in ('ascending', 'descending'):
+        print(f"Error: Invalid sort order '{sort_order}'. Use 'ascending' or 'descending'")
+        sys.exit(1)
+
+    # Check if a specific VAB file is provided as third positional argument
+    if len(positional_args) >= 2:
+        output_json = positional_args[0]
+        specific_vab = positional_args[1]
+        process_with_specific_vab(directory, specific_vab, output_json, sort_method, sort_order)
     else:
-        output_json = sys.argv[2] if len(sys.argv) > 2 else 'vab_data.json'
-        process_vab_directory(directory, output_json)
+        output_json = positional_args[0] if positional_args else 'vab_data.json'
+        process_vab_directory(directory, output_json, sort_method, sort_order)
 
 
 if __name__ == '__main__':
